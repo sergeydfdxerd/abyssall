@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Abyssal: Тайны Мирового океана</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/htm@3.1.1/dist/htm.umd.js"></script>
+<style>
+:root{--bg:#020b18;--ink:#e6f4f8;--mute:#8fb3c4;--cy:#2de2e6;--pk:#ff4fd8;--glass:rgba(255,255,255,.06);--line:rgba(120,220,240,.18);padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:'Manrope',system-ui,sans-serif}
+h1,h2,h3,.disp{font-family:'Fraunces',Georgia,serif}
+.glass{background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid var(--line);border-radius:18px}
+.glow{box-shadow:0 0 28px rgba(45,226,230,.35)}
+.bubble{position:absolute;border-radius:50%;border:1px solid rgba(45,226,230,.35);animation:rise linear infinite}
+@keyframes rise{from{transform:translateY(0);opacity:.7}to{transform:translateY(-110vh);opacity:0}}
+.pulse{animation:pulse 3s ease-in-out infinite}
+@keyframes pulse{50%{filter:drop-shadow(0 0 14px var(--c,#2de2e6));opacity:.8}}
+@media (prefers-reduced-motion:reduce){.bubble,.pulse{animation:none}html{scroll-behavior:auto}}
+:focus-visible{outline:2px solid var(--cy);outline-offset:2px}
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Manrope:wght@400;600&display=swap">
+</head>
+<body>
+<div id="root"></div>
+<script>
+const { useState, useEffect, useMemo, useRef } = React;
+const html = htm.bind(React.createElement);
+
+/* ---------- Иконки (пути из набора Lucide, inline) ---------- */
+const P = {
+  down:'<path d="m6 9 6 6 6-6"/>', search:'<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  x:'<path d="M18 6 6 18M6 6l12 12"/>', gauge:'<path d="m12 14 4-4"/><path d="M3.3 19a10 10 0 1 1 17.4 0"/>',
+  waves:'<path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/>',
+  check:'<path d="M20 6 9 17l-5-5"/>', book:'<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>',
+  zap:'<path d="M4 14a1 1 0 0 1-.8-1.6l9.9-10.2a.5.5 0 0 1 .9.4l-1.9 6.4a1 1 0 0 0 .9 1.3H20a1 1 0 0 1 .8 1.6l-9.9 10.2a.5.5 0 0 1-.9-.4l1.9-6.4A1 1 0 0 0 11 14z"/>'
+};
+const Icon = ({n,size=20,className=''}) => html`<svg width=${size} height=${size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class=${className} aria-hidden="true" dangerouslySetInnerHTML=${{__html:P[n]}}/>`;
+
+/* ---------- Данные ---------- */
+const ZONES = [
+  {id:'epi',name:'Эпипелагиаль',sub:'Фотическая зона',from:0,to:200,color:'#2de2e6',bg:'#0a5a7a',text:'Солнечный свет питает фитопланктон — основу почти всей океанической пищевой сети. Температура 10–30 °C.'},
+  {id:'meso',name:'Мезопелагиаль',sub:'Сумеречная зона',from:200,to:1000,color:'#5aa8ff',bg:'#0b2f5a',text:'Света хватает лишь на тени. Здесь идёт крупнейшая суточная миграция на планете: миллиарды рыб поднимаются ночью к поверхности.'},
+  {id:'bathy',name:'Батипелагиаль',sub:'Полуночная зона',from:1000,to:4000,color:'#b06bff',bg:'#06142e',text:'Вечная тьма, около 4 °C и давление до 400 атмосфер. Единственный свет — живой: его создают сами животные.'},
+  {id:'hadal',name:'Хадальпелагиаль',sub:'Желоба, 6000–11 000 м',from:6000,to:11000,color:'#ff4fd8',bg:'#01040b',text:'Давление свыше 1000 атмосфер — как слон на ногте. Жизнь здесь держится на «морском снеге» и химии.'}
+];
+const SPECIES = [
+  {id:1,name:'Рыба-удильщик',lat:'Melanocetus johnsonii',cat:'Рыбы',zone:'bathy',depth:'200–2000 м',diet:'Рыбы и ракообразные',emoji:'🐟',fact:'Светящаяся «удочка» (эска) с симбиотическими бактериями приманивает добычу. Самцы у многих видов сливаются с самкой и живут как паразит.',adapt:'Биолюминесценция'},
+  {id:2,name:'Гигантский кальмар',lat:'Architeuthis dux',cat:'Беспозвоночные',zone:'meso',depth:'300–1000 м',diet:'Глубоководные рыбы и кальмары',emoji:'🦑',fact:'Глаза до 27 см в диаметре — самые крупные в животном мире. Они замечают светящийся шлейф кашалота издалека.',adapt:'Огромные глаза'},
+  {id:3,name:'Трубчатые черви Riftia',lat:'Riftia pachyptila',cat:'Беспозвоночные',zone:'bathy',depth:'2000–2600 м',diet:'Продукты хемосинтеза бактерий',emoji:'🪱',fact:'Нет рта и кишечника: внутри живут бактерии, которые превращают сероводород гидротермальных источников в пищу.',adapt:'Хемосинтез'},
+  {id:4,name:'Хадальная улитка-рыба',lat:'Pseudoliparis swirei',cat:'Рыбы',zone:'hadal',depth:'6000–8000 м',diet:'Амфиподы и мелкие рачки',emoji:'🐠',fact:'Живёт глубже 7000 м. Студенистое тело и гибкий череп помогают выдержать колоссальное давление.',adapt:'Устойчивость к давлению'},
+  {id:5,name:'Кашалот',lat:'Physeter macrocephalus',cat:'Млекопитающие',zone:'meso',depth:'0–2000 м',diet:'Кальмары',emoji:'🐋',fact:'Ныряет на 2 км и задерживает дыхание до 90 минут: миоглобин в мышцах хранит кислород.',adapt:'Запас кислорода'},
+  {id:6,name:'Клюворыл Cuvier',lat:'Ziphius cavirostris',cat:'Млекопитающие',zone:'bathy',depth:'0–2990 м',diet:'Кальмары, глубоководные рыбы',emoji:'🐬',fact:'Рекордсмен среди млекопитающих: нырок на 2992 м и 222 минуты под водой.',adapt:'Складные рёбра'},
+  {id:7,name:'Медуза Atolla',lat:'Atolla wyvillei',cat:'Беспозвоночные',zone:'meso',depth:'500–1000 м',diet:'Планктон',emoji:'🪼',fact:'При нападении вспыхивает «сигнализацией от взлома»: яркие волны света привлекают более крупных хищников.',adapt:'Световая тревога'},
+  {id:8,name:'Бактерии Pyrolobus',lat:'Pyrolobus fumarii',cat:'Микроорганизмы',zone:'bathy',depth:'3600 м (чёрные курильщики)',diet:'Водород, хемосинтез',emoji:'🦠',fact:'Размножается при 113 °C и останавливается ниже 90 °C. Один из самых термофильных организмов Земли.',adapt:'Жизнь при 113 °C'},
+  {id:9,name:'Амфипода Hirondellea',lat:'Hirondellea gigas',cat:'Беспозвоночные',zone:'hadal',depth:'7000–10 900 м',diet:'Растительные остатки, древесина',emoji:'🦐',fact:'Вырабатывает ферменты, перевариваюшие целлюлозу, и накапливает алюминиевый гель против давления.',adapt:'Ферменты и гель'},
+  {id:10,name:'Фораминиферы ксенофиофоры',lat:'Xenophyophorea',cat:'Микроорганизмы',zone:'hadal',depth:'10 600 м',diet:'Органический детрит',emoji:'🔬',fact:'Одноклеточные гиганты до 20 см. Находили в Марианской впадине — их вмещают устойчивые к ртути и свинцу клетки.',adapt:'Одна огромная клетка'}
+];
+const CATS = ['Все','Млекопитающие','Рыбы','Беспозвоночные','Микроорганизмы'];
+const QUIZ = [
+  {q:'Как удильщик привлекает добычу в полной темноте?',a:['Издаёт звук','Светящейся приманкой с бактериями','Выделяет запах','Меняет цвет'],c:1,w:'Эска содержит светящихся симбиотических бактерий.'},
+  {q:'Чем питаются трубчатые черви Riftia, у которых нет рта?',a:['Планктоном','Падалью','Продуктами бактерий-хемосинтетиков','Растениями'],c:2,w:'Бактерии внутри червя перерабатывают сероводород.'},
+  {q:'Какое давление в Марианской впадине примерно?',a:['100 атм','300 атм','500 атм','Более 1000 атм'],c:3,w:'На глубине ~11 км давление превышает 1000 атмосфер.'},
+  {q:'Что помогает кашалоту нырять на 2 км?',a:['Жабры','Миоглобин, хранящий кислород','Воздушный пузырь','Тонкая кожа'],c:1,w:'Мышцы богаты миоглобином, это запас кислорода.'},
+  {q:'Почему в глубине не работает фотосинтез?',a:['Слишком холодно','Нет света','Нет воды','Много соли'],c:1,w:'Свет не проникает глубже ~200 м (фотическая зона).'}
+];
+
+/* ---------- Фоновые пузыри ---------- */
+const Bubbles = () => {
+  const items = useMemo(() => Array.from({length:14},(_,i)=>({l:Math.random()*100,s:4+Math.random()*14,d:12+Math.random()*18,delay:-Math.random()*20})),[]);
+  return html`<div class="fixed inset-0 overflow-hidden pointer-events-none" aria-hidden="true">${items.map((b,i)=>html`<span key=${i} class="bubble" style=${{left:b.l+'%',bottom:'-20px',width:b.s,height:b.s,animationDuration:b.d+'s',animationDelay:b.delay+'s'}}/>`)}</div>`;
+};
+
+/* ---------- Навигация ---------- */
+const Nav = () => html`
+<header class="fixed top-0 inset-x-0 z-40 px-3 pt-3" style=${{paddingTop:'calc(env(safe-area-inset-top,0px) + 12px)'}}>
+  <nav class="glass max-w-5xl mx-auto flex items-center justify-between px-4 py-2.5">
+    <a href="#top" class="disp font-bold text-lg flex items-center gap-2"><${Icon} n="waves" className="text-[var(--cy)]"/>Abyssal</a>
+    <div class="flex gap-4 text-sm text-[var(--mute)]">
+      <a class="hover:text-white" href="#zones">Зоны</a><a class="hover:text-white" href="#catalog">Каталог</a><a class="hover:text-white" href="#quiz">Викторина</a>
+    </div>
+  </nav>
+</header>`;
+
+/* ---------- Hero ---------- */
+const Hero = () => html`
+<section id="top" class="relative min-h-screen flex items-center justify-center text-center px-5" style=${{background:'linear-gradient(#0a7a9a,#0a4e72 45%,#020b18)'}}>
+  <div class="max-w-3xl pt-16">
+    <p class="text-[var(--cy)] mb-4 text-sm">0 м → 11 000 м</p>
+    <h1 class="text-4xl sm:text-6xl font-bold leading-tight">Abyssal: Погружение в глубины Мирового океана</h1>
+    <p class="mt-6 text-lg text-[#cfeaf2] max-w-xl mx-auto">Под давлением в тысячу атмосфер, в темноте и холоде живут существа, которые сами создают свет. Узнайте, как они выживают.</p>
+    <a href="#zones" class="glow inline-flex items-center gap-2 mt-9 px-7 py-3.5 rounded-full font-semibold text-[#02222b] bg-[var(--cy)] hover:brightness-110 transition">Начать погружение <${Icon} n="down"/></a>
+  </div>
+</section>`;
+
+/* ---------- Карточка вида (мини) в зоне ---------- */
+const ZoneExplorer = ({onOpen}) => {
+  const [active,setActive] = useState(0);
+  const refs = useRef([]);
+  // Отслеживаем, какая зона сейчас в центре экрана
+  useEffect(() => {
+    const io = new IntersectionObserver(es => es.forEach(e => e.isIntersecting && setActive(+e.target.dataset.i)), {rootMargin:'-45% 0px -45% 0px'});
+    refs.current.forEach(r => r && io.observe(r));
+    return () => io.disconnect();
+  },[]);
+  const z = ZONES[active];
+  // Глубина-индикатор: середина активной зоны
+  const depth = Math.round((z.from + z.to)/2);
+  return html`
+  <section id="zones" class="relative transition-colors duration-1000" style=${{background:`linear-gradient(#020b18, ${z.bg} 30%, #020b18)`}}>
+    <div class="fixed right-3 top-1/2 -translate-y-1/2 z-30 glass px-3 py-4 text-center hidden sm:block" style=${{borderColor:z.color}}>
+      <${Icon} n="gauge" className="mx-auto mb-1" style=${{color:z.color}}/>
+      <div class="disp text-xl font-bold" style=${{color:z.color}}>${depth.toLocaleString('ru')}</div><div class="text-xs text-[var(--mute)]">метров</div>
+    </div>
+    <div class="max-w-4xl mx-auto px-5 py-24">
+      <h2 class="text-3xl sm:text-4xl font-bold mb-3">Исследователь зон</h2>
+      <p class="text-[var(--mute)] mb-4">Прокручивайте вниз — свет угасает, давление растёт. Нажмите на существо, чтобы узнать, чем оно приспособилось.</p>
+      <p class="sm:hidden text-sm mb-6" style=${{color:z.color}}>Глубина: ${depth.toLocaleString('ru')} м</p>
+      ${ZONES.map((zn,i) => html`
+      <div key=${zn.id} ref=${el=>refs.current[i]=el} data-i=${i} class="min-h-[85vh] py-10 flex flex-col justify-center">
+        <div class="text-sm" style=${{color:zn.color}}>${zn.sub} · ${zn.from}–${zn.to} м</div>
+        <h3 class="text-3xl sm:text-5xl font-bold my-2">${zn.name}</h3>
+        <p class="text-[#c3dde8] max-w-xl mb-6">${zn.text}</p>
+        <div class="flex flex-wrap gap-3">
+          ${SPECIES.filter(s=>s.zone===zn.id).map(s => html`
+          <button key=${s.id} onClick=${()=>onOpen(s)} class="glass px-4 py-3 text-left hover:-translate-y-1 transition" style=${{'--c':zn.color}}>
+            <span class="text-3xl pulse inline-block">${s.emoji}</span>
+            <div class="font-semibold text-sm mt-1">${s.name}</div>
+            <div class="text-xs flex items-center gap-1" style=${{color:zn.color}}><${Icon} n="zap" size=${12}/>${s.adapt}</div>
+          </button>`)}
+        </div>
+      </div>`)}
+    </div>
+  </section>`;
+};
+
+/* ---------- Каталог ---------- */
+const Catalog = ({onOpen}) => {
+  const [q,setQ] = useState(''); const [cat,setCat] = useState('Все');
+  const list = SPECIES.filter(s => (cat==='Все'||s.cat===cat) && (s.name+s.lat).toLowerCase().includes(q.toLowerCase()));
+  return html`
+  <section id="catalog" class="max-w-5xl mx-auto px-5 py-24">
+    <h2 class="text-3xl sm:text-4xl font-bold mb-6">Биологический каталог</h2>
+    <label class="glass flex items-center gap-3 px-4 py-3 mb-4">
+      <${Icon} n="search" className="text-[var(--mute)]"/>
+      <input value=${q} onInput=${e=>setQ(e.target.value)} placeholder="Поиск по названию или латыни" class="bg-transparent outline-none w-full placeholder:text-[var(--mute)]"/>
+    </label>
+    <div class="flex flex-wrap gap-2 mb-8">
+      ${CATS.map(c => html`<button key=${c} onClick=${()=>setCat(c)} class=${'px-4 py-1.5 rounded-full text-sm border transition '+(cat===c?'bg-[var(--cy)] text-[#02222b] border-transparent':'border-[var(--line)] text-[var(--mute)] hover:text-white')}>${c}</button>`)}
+    </div>
+    ${list.length===0 && html`<p class="text-[var(--mute)]">Ничего не найдено. Измените запрос или выберите другую категорию.</p>`}
+    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      ${list.map(s => html`
+      <button key=${s.id} onClick=${()=>onOpen(s)} class="glass p-5 text-left hover:border-[var(--cy)] transition">
+        <div class="text-4xl mb-3">${s.emoji}</div>
+        <h3 class="font-bold text-lg">${s.name}</h3>
+        <p class="italic text-sm text-[var(--mute)]">${s.lat}</p>
+        <div class="flex justify-between mt-3 text-xs"><span class="text-[var(--cy)]">${s.cat}</span><span class="text-[var(--mute)]">${s.depth}</span></div>
+      </button>`)}
+    </div>
+  </section>`;
+};
+
+/* ---------- Модальное окно ---------- */
+const Modal = ({s,onClose}) => {
+  useEffect(() => { const k = e => e.key==='Escape' && onClose(); window.addEventListener('keydown',k); return () => window.removeEventListener('keydown',k); },[]);
+  if(!s) return null;
+  const row = (t,v) => html`<div class="py-2.5 border-b border-[var(--line)]"><div class="text-xs text-[var(--mute)]">${t}</div><div>${v}</div></div>`;
+  return html`
+  <div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-3 bg-black/60" onClick=${onClose}>
+    <div role="dialog" aria-modal="true" class="glass w-full max-w-lg max-h-[90vh] overflow-y-auto p-6" style=${{background:'rgba(4,20,40,.9)'}} onClick=${e=>e.stopPropagation()}>
+      <div class="flex justify-between items-start">
+        <div><div class="text-5xl mb-2">${s.emoji}</div><h3 class="text-2xl font-bold">${s.name}</h3><p class="italic text-[var(--cy)]">${s.lat}</p></div>
+        <button onClick=${onClose} aria-label="Закрыть" class="p-2 rounded-full hover:bg-white/10"><${Icon} n="x"/></button>
+      </div>
+      <div class="mt-4">${row('Среда обитания',s.depth+' · '+ZONES.find(z=>z.id===s.zone).name)}${row('Рацион',s.diet)}${row('Адаптация',s.adapt)}${row('Особенности',s.fact)}</div>
+    </div>
+  </div>`;
+};
+
+/* ---------- Викторина ---------- */
+const Quiz = () => {
+  const [i,setI] = useState(0); const [pick,setPick] = useState(null); const [score,setScore] = useState(0); const [done,setDone] = useState(false);
+  const cur = QUIZ[i];
+  const answer = k => { if(pick!==null) return; setPick(k); if(k===cur.c) setScore(s=>s+1); };
+  const next = () => { if(i+1>=QUIZ.length) setDone(true); else { setI(i+1); setPick(null); } };
+  const reset = () => { setI(0); setPick(null); setScore(0); setDone(false); };
+  return html`
+  <section id="quiz" class="max-w-2xl mx-auto px-5 py-24">
+    <h2 class="text-3xl sm:text-4xl font-bold mb-2">Выжить в желобе</h2>
+    <p class="text-[var(--mute)] mb-6">Проверьте, как хорошо вы знаете адаптации глубоководных организмов.</p>
+    <div class="glass p-6">
+      ${done ? html`
+        <div class="text-center"><h3 class="text-2xl font-bold">Вы выжили на ${score} из ${QUIZ.length} вопросов</h3>
+        <p class="text-[var(--mute)] mt-2">${score>=4?'Вы готовы к погружению в Марианскую впадину.':score>=2?'Вы добрались до батипелагиали. Прочитайте каталог и попробуйте снова.':'Давление оказалось сильнее. Изучите зоны и вернитесь.'}</p>
+        <button onClick=${reset} class="mt-6 px-6 py-2.5 rounded-full bg-[var(--cy)] text-[#02222b] font-semibold">Пройти заново</button></div>` : html`
+        <div class="flex justify-between text-sm text-[var(--mute)] mb-3"><span>Вопрос ${i+1} из ${QUIZ.length}</span><span>Верно: ${score}</span></div>
+        <div class="h-1 bg-white/10 rounded mb-5"><div class="h-1 rounded bg-[var(--cy)] transition-all" style=${{width:((i+(pick!==null?1:0))/QUIZ.length*100)+'%'}}/></div>
+        <h3 class="text-xl font-bold mb-4">${cur.q}</h3>
+        <div class="grid gap-2.5">
+          ${cur.a.map((t,k) => {
+            const state = pick===null ? 'border-[var(--line)] hover:border-[var(--cy)]' : k===cur.c ? 'border-emerald-400 bg-emerald-400/15' : k===pick ? 'border-rose-400 bg-rose-400/15' : 'border-[var(--line)] opacity-60';
+            return html`<button key=${k} onClick=${()=>answer(k)} class=${'text-left px-4 py-3 rounded-xl border transition flex justify-between '+state}>${t}${pick!==null&&k===cur.c&&html`<${Icon} n="check" className="text-emerald-400"/>`}</button>`; })}
+        </div>
+        ${pick!==null && html`<p class="mt-4 text-sm text-[#c3dde8]">${cur.w}</p><button onClick=${next} class="mt-4 px-6 py-2.5 rounded-full bg-[var(--cy)] text-[#02222b] font-semibold">${i+1>=QUIZ.length?'Показать результат':'Следующий вопрос'}</button>`}`}
+    </div>
+  </section>`;
+};
+
+/* ---------- Футер ---------- */
+const Footer = () => html`
+<footer class="border-t border-[var(--line)] mt-10">
+  <div class="max-w-5xl mx-auto px-5 py-12 grid gap-8 sm:grid-cols-3 text-sm text-[var(--mute)]">
+    <div><div class="disp text-xl font-bold text-white mb-2">Abyssal</div><p>Образовательный проект о морской биологии и зонах океана.</p></div>
+    <div><div class="font-semibold text-white mb-2">Разделы</div><ul class="space-y-1"><li><a href="#zones" class="hover:text-white">Исследователь зон</a></li><li><a href="#catalog" class="hover:text-white">Каталог</a></li><li><a href="#quiz" class="hover:text-white">Викторина</a></li></ul></div>
+    <div><div class="font-semibold text-white mb-2 flex items-center gap-2"><${Icon} n="book" size=${16}/>Источники</div><ul class="space-y-1"><li>NOAA Ocean Exploration</li><li>Monterey Bay Aquarium Research Institute</li><li>Census of Marine Life</li><li>Schmidt Ocean Institute</li></ul></div>
+  </div>
+</footer>`;
+
+/* ---------- Приложение ---------- */
+const App = () => {
+  const [sel,setSel] = useState(null);
+  return html`<div class="relative"><${Bubbles}/><${Nav}/><main class="relative"><${Hero}/><${ZoneExplorer} onOpen=${setSel}/><${Catalog} onOpen=${setSel}/><${Quiz}/></main><${Footer}/><${Modal} s=${sel} onClose=${()=>setSel(null)}/></div>`;
+};
+ReactDOM.createRoot(document.getElementById('root')).render(html`<${App}/>`);
+</script>
+</body>
+</html>
